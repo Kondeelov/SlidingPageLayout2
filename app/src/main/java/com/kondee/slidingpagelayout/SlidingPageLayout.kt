@@ -22,12 +22,13 @@ class SlidingPageLayout @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
-    private val viewDragHelper = ViewDragHelper.create(this, 1.0f, SlidingPageViewDragHelperCallback())
+    private val viewDragHelper =
+        ViewDragHelper.create(this, 1.0f, SlidingPageViewDragHelperCallback())
 
-    private var viewFocused: FrameLayout? = null
-    private var viewUnFocused: FrameLayout? = null
+    private var viewFocused: SlidingItemLayout? = null
+    private var viewUnFocused: SlidingItemLayout? = null
 
-    private var viewTemp: FrameLayout? = null
+    private var viewTemp: SlidingItemLayout? = null
 
     private var isAnimating: Boolean = false
 
@@ -38,14 +39,14 @@ class SlidingPageLayout @JvmOverloads constructor(
 
         val lp = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
 
-        viewFocused = FrameLayout(context).apply {
+        viewFocused = SlidingItemLayout(context).apply {
             id = View.generateViewId()
             layoutParams = lp
             isClickable = true
             setBackgroundColor(Color.parseColor("#5500FF00"))
         }
 
-        viewUnFocused = FrameLayout(context).apply {
+        viewUnFocused = SlidingItemLayout(context).apply {
             id = View.generateViewId()
             layoutParams = lp
             isClickable = true
@@ -56,12 +57,13 @@ class SlidingPageLayout @JvmOverloads constructor(
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         super.onLayout(changed, l, t, r, b)
 
-        Log.i("Kondee","changed: $changed, top: $t")
-
-        viewUnFocused?.let {
-            it.offsetLeftAndRight(0)
-            it.offsetTopAndBottom(height)
+        if (changed) {
+            viewUnFocused?.let {
+                it.offsetLeftAndRight(0)
+                it.offsetTopAndBottom(height)
+            }
         }
+        Log.i("Kondee", "changed: $changed, top: $t")
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
@@ -70,10 +72,10 @@ class SlidingPageLayout @JvmOverloads constructor(
 
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
 
-        if (mState == State.EXPAND) {
-            if (event.action == MotionEvent.ACTION_DOWN) {
-                startY = event.rawY
-            } else if (event.action == MotionEvent.ACTION_MOVE) {
+        if (event.action == MotionEvent.ACTION_DOWN) {
+            startY = event.rawY
+        } else if (event.action == MotionEvent.ACTION_MOVE) {
+            if (mState == State.EXPAND) {
                 val delta = event.rawY - startY
                 if (delta < 0) {
                     mAdapter?.getCurrentItem()?.view?.let {
@@ -141,8 +143,6 @@ class SlidingPageLayout @JvmOverloads constructor(
                         viewUnFocused?.offsetTopAndBottom(-height)
 
                         mState = State.COLLAPSED_PREVIOUS
-                    } else {
-
                     }
                 }
                 State.END -> {
@@ -169,30 +169,80 @@ class SlidingPageLayout @JvmOverloads constructor(
          */
         if (viewDragHelper.continueSettling(true)) {
             isAnimating = true
-            viewFocused?.let {
-                postInvalidateOnAnimation()
-            }
+            postInvalidateOnAnimation()
         } else {
-
-            isAnimating = false
 
             /**
              * When scroll animation ended.
              * Set the new position of the unfocused view to top or bottom according to the state.
              */
             if (mState == State.COLLAPSED_PREVIOUS) {
-                viewFocused?.offsetTopAndBottom(height)
+                var focusedPosition = 0
+                viewFocused?.let {
+                    val offsetY = (-it.top) + height
+                    it.offsetTopAndBottom(offsetY)
+                    focusedPosition = mAdapter?.getViewPosition(it) ?: 0
+                }
+                val unfocusedPosition = focusedPosition - 1
                 viewUnFocused?.let {
-                    mAdapter?.replaceFragment(mAdapter?.previousPosition ?: 0, it)
-                    it.offsetTopAndBottom((-it.top) - height)
+                    if (unfocusedPosition != (mAdapter?.getViewPosition(it) ?: 0)) {
+                        mAdapter?.replaceFragment(unfocusedPosition, it)
+                        val offsetY = (-it.top) - height
+                        it.offsetTopAndBottom(offsetY)
+                    }
                 }
             } else if (mState == State.COLLAPSED_NEXT) {
-                viewFocused?.offsetTopAndBottom(-height)
-                viewUnFocused?.let {
-                    mAdapter?.replaceFragment(mAdapter?.nextPosition ?: 0, it)
-                    it.top = height
-//                    it.offsetTopAndBottom((-it.top) + height)
+                var focusedPosition = 0
+                viewFocused?.let {
+                    val offsetY = (-it.top) - height
+                    it.offsetTopAndBottom(offsetY)
+                    focusedPosition = mAdapter?.getViewPosition(it) ?: 0
                 }
+                val unfocusedPosition = focusedPosition + 1
+                viewUnFocused?.let {
+                    if (unfocusedPosition != (mAdapter?.getViewPosition(it) ?: 0)) {
+                        mAdapter?.replaceFragment(unfocusedPosition, it)
+                        val offsetY = (-it.top) + height
+                        it.offsetTopAndBottom(offsetY)
+                    }
+                }
+            }
+
+            isAnimating = false
+        }
+    }
+
+    inner class SlidingItemLayout @JvmOverloads constructor(
+        context: Context, attrs: AttributeSet? = null
+    ) : FrameLayout(context, attrs) {
+
+        private var offsetX = 0
+        private var offsetY = 0
+
+        /**
+         * Save offsetY
+         */
+        override fun offsetTopAndBottom(offset: Int) {
+            super.offsetTopAndBottom(offset)
+            offsetY = offset
+        }
+
+        /**
+         * Save offsetX
+         */
+        override fun offsetLeftAndRight(offset: Int) {
+            super.offsetLeftAndRight(offset)
+            offsetX = offset
+        }
+
+        /**
+         * Restore offset whenever SlidingItemLayout onLayout gets called and changed flag is true.
+         */
+        override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+            super.onLayout(changed, left, top, right, bottom)
+            if (changed) {
+                offsetLeftAndRight(offsetX)
+                offsetTopAndBottom(offsetY)
             }
         }
     }
@@ -208,8 +258,8 @@ class SlidingPageLayout @JvmOverloads constructor(
         }
 
         override fun clampViewPositionVertical(child: View, top: Int, dy: Int): Int {
-            if (top < -height) {
-//                viewDragHelper.captureChildView()
+            if ((mAdapter?.currentPosition ?: 0) == 0 && top > 0) {
+                return 0
             }
             return min(max(top, -height), height)
         }
@@ -224,12 +274,14 @@ class SlidingPageLayout @JvmOverloads constructor(
                         if (abs(yvel) > scaleMinimumFlingVelocity) {
                             if (yvel > 0) {
                                 viewDragHelper.smoothSlideViewTo(it, 0, height)
+                                mAdapter?.pauseFragment(mAdapter?.currentPosition ?: 0)
+                                mAdapter?.currentPosition = -1
                                 mState = State.COLLAPSED_PREVIOUS
-                                mAdapter?.previousPosition = (mAdapter?.currentPosition ?: 0) - 1
                             } else {
                                 viewDragHelper.smoothSlideViewTo(it, 0, -height)
+                                mAdapter?.pauseFragment(mAdapter?.currentPosition ?: 0)
+                                mAdapter?.currentPosition = -1
                                 mState = State.COLLAPSED_NEXT
-                                mAdapter?.nextPosition = (mAdapter?.currentPosition ?: 0) + 1
                             }
                         } else {
                             viewDragHelper.smoothSlideViewTo(it, 0, 0)
@@ -239,8 +291,9 @@ class SlidingPageLayout @JvmOverloads constructor(
                         if (abs(yvel) > scaleMinimumFlingVelocity) {
                             if (yvel > 0) {
                                 viewDragHelper.smoothSlideViewTo(it, 0, 0)
+                                mAdapter?.currentPosition = mAdapter?.getViewPosition(it) ?: 0
+                                mAdapter?.resumeFragment(mAdapter?.currentPosition ?: 0)
                                 mState = State.EXPAND
-                                mAdapter?.currentPosition = mAdapter?.nextPosition ?: 0
                             } else {
                                 viewDragHelper.smoothSlideViewTo(it, 0, -height)
                             }
@@ -254,8 +307,9 @@ class SlidingPageLayout @JvmOverloads constructor(
                                 viewDragHelper.smoothSlideViewTo(it, 0, height)
                             } else {
                                 viewDragHelper.smoothSlideViewTo(it, 0, 0)
+                                mAdapter?.currentPosition = mAdapter?.getViewPosition(it) ?: 0
+                                mAdapter?.resumeFragment(mAdapter?.currentPosition ?: 0)
                                 mState = State.EXPAND
-                                mAdapter?.currentPosition = mAdapter?.previousPosition ?: 0
                             }
                         } else {
                             viewDragHelper.smoothSlideViewTo(it, 0, height)
@@ -294,23 +348,19 @@ class SlidingPageLayout @JvmOverloads constructor(
         }
         if (itemCount >= 1) {
             addView(viewFocused)
-            mAdapter?.replaceFragment(0, viewFocused)
+            mAdapter?.replaceFragment(0, viewFocused, Lifecycle.State.RESUMED)
         }
-
-        setupAdapterInternal()
     }
 
-    private fun setupAdapterInternal() {
+//    private fun setupAdapterInternal() {
 //        if (mState == State.EXPAND) {
 //            mAdapter?.resumeFragment(0)
 //        }
-    }
+//    }
 
     abstract class Adapter(private val fm: FragmentManager) {
 
-        var previousPosition: Int = -1
         var currentPosition: Int = 0
-        var nextPosition: Int = 1
 
         open fun getItemCount(): Int {
             return 0
@@ -318,12 +368,17 @@ class SlidingPageLayout @JvmOverloads constructor(
 
         abstract fun getItem(position: Int): Fragment
 
-        fun replaceFragment(position: Int, view: View?) {
+        fun replaceFragment(
+            position: Int,
+            view: View?,
+            maxLifecycle: Lifecycle.State = Lifecycle.State.CREATED
+        ) {
+//            Modify this function to replace fragment with custom maxLifecycle for each fragments.
             view?.let {
                 val fragment = getItem(position)
                 fm.beginTransaction()
                     .replace(it.id, fragment, "fragment_$position")
-//                    .setMaxLifecycle(fragment, Lifecycle.State.CREATED)
+                    .setMaxLifecycle(fragment, maxLifecycle)
                     .commit()
             }
         }
@@ -351,6 +406,11 @@ class SlidingPageLayout @JvmOverloads constructor(
 
         fun getCurrentItem(): Fragment? {
             return fm.findFragmentByTag("fragment_$currentPosition")
+        }
+
+        fun getViewPosition(view: View): Int {
+            val fragment = fm.findFragmentById(view.id)
+            return fragment?.tag?.replace("fragment_", "")?.toIntOrNull() ?: 0
         }
     }
 }
